@@ -1,0 +1,117 @@
+﻿@page "/"
+@using System.Globalization
+@using System.Net
+@using BlazorPokeApi.Models
+@inject HttpClient Http
+
+<PageTitle>Buscar Pokémon</PageTitle>
+
+<h1>Buscar Pokémon</h1>
+
+<div class="mb-3">
+    <label for="nomePokemon" class="form-label">Nome do Pokémon:</label>
+    <input id="nomePokemon"
+           class="form-control"
+           @bind="nomePokemon"
+           @bind:event="oninput"
+           @onkeydown="AoPressionarTecla" />
+</div>
+
+<button class="btn btn-primary" @onclick="BuscarPokemon" disabled="@carregando">
+    @(carregando ? "Buscando..." : "Buscar Pokémon")
+</button>
+
+<hr />
+
+@if (!string.IsNullOrEmpty(mensagemErro))
+{
+    <div class="alert alert-danger">@mensagemErro</div>
+}
+
+@if (pokemon is not null)
+{
+    <h3>Detalhes do Pokémon</h3>
+
+    @if (!string.IsNullOrEmpty(imagemUrl))
+    {
+        <img src="@imagemUrl" alt="@pokemon.Name" width="150" />
+    }
+
+    <p><strong>ID:</strong> @pokemon.Id</p>
+    <p><strong>Nome:</strong> @pokemon.Name</p>
+    <p><strong>Altura:</strong> @altura m</p>
+    <p><strong>Peso:</strong> @peso kg</p>
+}
+
+@code {
+    private static readonly CultureInfo PtBr = new("pt-BR");
+
+    private string nomePokemon = string.Empty;
+    private Pokemon? pokemon;
+    private string? imagemUrl;
+    private string? mensagemErro;
+    private bool carregando;
+
+    // Conversões: altura (dm -> m) e peso (hg -> kg)
+    private string altura => pokemon is null ? "" : (pokemon.Height / 10.0).ToString("0.0", PtBr);
+    private string peso => pokemon is null ? "" : (pokemon.Weight / 10.0).ToString("0.0", PtBr);
+
+    private async Task AoPressionarTecla(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await BuscarPokemon();
+        }
+    }
+
+    private async Task BuscarPokemon()
+    {
+        mensagemErro = null;
+        pokemon = null;
+        imagemUrl = null;
+
+        var nome = nomePokemon.Trim().ToLowerInvariant();
+
+        if (string.IsNullOrEmpty(nome))
+        {
+            mensagemErro = "Digite o nome de um Pokémon.";
+            return;
+        }
+
+        carregando = true;
+
+        try
+        {
+            var url = $"https://pokeapi.co/api/v2/pokemon/{Uri.EscapeDataString(nome)}";
+            var resposta = await Http.GetAsync(url);
+
+            if (resposta.StatusCode == HttpStatusCode.NotFound)
+            {
+                mensagemErro = $"Pokémon \"{nomePokemon}\" não encontrado.";
+            }
+            else if (!resposta.IsSuccessStatusCode)
+            {
+                mensagemErro = $"Erro ao consultar a API (código {(int)resposta.StatusCode}).";
+            }
+            else
+            {
+                pokemon = await resposta.Content.ReadFromJsonAsync<Pokemon>();
+
+                // Imagem obrigatoriamente de sprites.other["official-artwork"].front_default
+                imagemUrl = pokemon?.Sprites?.Other?.OfficialArtwork?.FrontDefault;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            mensagemErro = "Não foi possível conectar à Internet ou à API.";
+        }
+        catch (Exception ex)
+        {
+            mensagemErro = $"Ocorreu um erro inesperado: {ex.Message}";
+        }
+        finally
+        {
+            carregando = false;
+        }
+    }
+}
